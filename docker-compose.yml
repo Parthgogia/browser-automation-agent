@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# Storage tier only.
+#
+# The FastAPI backend and Chromium deliberately run natively on the host, not
+# in here: a browser agent is debugged by *watching* the browser, and a headed
+# Chromium inside a container costs you that. Postgres carries both the
+# relational task history and the pgvector long-term memory, so this is the
+# only container you need for day-to-day development.
+#
+#   docker compose up -d
+# ---------------------------------------------------------------------------
+services:
+  postgres:
+    # pgvector/pgvector ships stock Postgres with the vector extension
+    # preinstalled, which saves a custom Dockerfile.
+    image: pgvector/pgvector:pg17
+    container_name: browser-agent-postgres
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: browser_agent
+    ports:
+      # 5433 on the host so it cannot collide with a local Postgres on 5432.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d browser_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

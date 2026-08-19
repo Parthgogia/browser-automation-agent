@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/*
+ * A small, deliberately restrained palette. The UI's job is to make the
+ * agent's reasoning legible, so colour is reserved for meaning -- risk,
+ * failure, success -- rather than decoration.
+ */
+@theme {
+  --color-canvas: #0b0d12;
+  --color-surface: #141821;
+  --color-surface-2: #1c2130;
+  --color-border: #262c3a;
+  --color-ink: #e6e9f0;
+  --color-ink-dim: #96a0b5;
+  --color-accent: #5b8cff;
+  --color-ok: #35c88a;
+  --color-warn: #f0a14a;
+  --color-danger: #f4595b;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Slim scrollbars: the timeline and page-preview panes both scroll a lot. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Local state -- browser profiles, screenshots, downloads, traces
+data/
+!data/.gitkeep
+
+# Secrets & local config
+.env
+.env.local
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
