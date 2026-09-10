@@ -39,6 +39,15 @@ _RETRYABLE_MARKERS = ("429", "500", "502", "503", "504", "deadline", "unavailabl
 
 _MAX_ATTEMPTS = 4
 
+#: Every provider emits vectors of this width, so the `memories` table stays
+#: queryable when you switch providers. pgvector cannot compute a distance
+#: between vectors of different dimensions, so a run that changed embedding
+#: model would otherwise make every previously stored memory unreadable.
+#: gemini-embedding-001 natively returns 3072; it supports truncation via
+#: `output_dimensionality`, which is what keeps it aligned with the 768-wide
+#: mock provider.
+EMBEDDING_DIMENSIONS = 768
+
 
 def _sanitise_schema(schema: Any) -> Any:
     """Recursively drop JSON Schema keywords Gemini cannot parse."""
@@ -108,6 +117,12 @@ class GeminiProvider(LLMProvider):
                     ]
                 )
             ]
+            # We hand Gemini plain declarations, never Python callables, so the
+            # SDK must not try to invoke anything itself. Saying so explicitly
+            # also silences the AFC advisory it otherwise logs on every step.
+            config_kwargs["automatic_function_calling"] = (
+                types.AutomaticFunctionCallingConfig(disable=True)
+            )
             if force_tool_use:
                 # "ANY" makes a function call the only legal output, which is
                 # exactly what the act loop wants: prose there is a dead end.
@@ -148,22 +163,42 @@ class GeminiProvider(LLMProvider):
     # ---------------------------------------------------------- embeddings --
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        from google.genai import types
+
         if not texts:
             return []
         try:
             response = await self._client.aio.models.embed_content(
                 model=self._settings.embedding_model,
                 contents=texts,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=EMBEDDING_DIMENSIONS
+                ),
             )
         except Exception as exc:
             raise LLMError(f"Gemini embedding failed: {exc}") from exc
-        return [list(embedding.values or []) for embedding in (response.embeddings or [])]
+
+        return [
+            _normalise(list(embedding.values or []))
+            for embedding in (response.embeddings or [])
+        ]
 
     @property
     def embedding_dimensions(self) -> int:
-        # gemini-embedding-001 defaults to 3072; the older text-embedding-004
-        # is 768. Keyed by model so the memory table is created correctly.
-        return 768 if "text-embedding-004" in self._settings.embedding_model else 3072
+        return EMBEDDING_DIMENSIONS
+
+
+def _normalise(vector: list[float]) -> list[float]:
+    """Scale a vector to unit length.
+
+    Only the full-width output of gemini-embedding-001 is normalised for you.
+    A truncated vector is not, and feeding un-normalised vectors to cosine
+    distance quietly skews every similarity score, so it is done here.
+    """
+    magnitude = sum(value * value for value in vector) ** 0.5
+    if not magnitude:
+        return vector
+    return [value / magnitude for value in vector]
 
 
 # ------------------------------------------------------------ translation --

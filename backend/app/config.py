@@ -31,13 +31,25 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # Without this, pydantic-settings JSON-decodes every list-typed field
+        # at the *source* level, before any validator runs -- so a perfectly
+        # ordinary `ALLOWED_DOMAINS=` line dies with "Expecting value: line 1
+        # column 1". Decoding off means the raw string reaches `_split_csv`,
+        # which is what lets `.env` use comma-separated lists like a human
+        # would write them.
+        enable_decoding=False,
     )
 
     # ---------------------------------------------------------------- LLM ---
     llm_provider: Literal["gemini", "mock"] = "mock"
     gemini_api_key: str = ""
-    llm_model: str = "gemini-2.5-flash"
-    llm_fast_model: str = "gemini-2.5-flash-lite"
+    #: Floating aliases rather than pinned versions. Google retires specific
+    #: model IDs ("no longer available to new users") without warning, which
+    #: breaks a setup that worked last month; the aliases keep tracking the
+    #: current generation. Pin an exact ID here if you need reproducibility
+    #: more than you need it to keep working.
+    llm_model: str = "gemini-flash-latest"
+    llm_fast_model: str = "gemini-flash-lite-latest"
     llm_temperature: float = 0.2
     embedding_model: str = "gemini-embedding-001"
 
@@ -84,10 +96,11 @@ class Settings(BaseSettings):
     @field_validator("allowed_domains", "blocked_domains", "cors_origins", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
-        """Accept ``a.com,b.com`` from the environment as a list.
+        """Accept ``a.com,b.com`` -- or an empty string -- as a list.
 
-        pydantic-settings would otherwise try to JSON-decode list-typed fields,
-        which makes for an unfriendly `.env` file.
+        Paired with ``enable_decoding=False`` above. An empty or
+        whitespace-only value yields an empty list, which is what an
+        unset-but-present `.env` line means.
         """
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
