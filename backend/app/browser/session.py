@@ -108,11 +108,46 @@ class BrowserSession:
         self._context.on("page", self._on_new_page)
         self._page.on("download", self._on_download)
 
+        await self._open_start_page()
+
         logger.info(
             "Browser session started (profile=%s, headless=%s)",
             self.profile,
             self.settings.browser_headless,
         )
+
+    async def _open_start_page(self) -> None:
+        """Move off ``about:blank`` before anyone -- model or human -- looks.
+
+        A blank tab is the worst possible first observation. It has no
+        elements, so the DOM index comes back empty; an empty index is exactly
+        what the vision fallback reads as "this page is opaque", so the first
+        and most expensive decision of every run gets a screenshot of nothing
+        attached to it. It is also what the human watches in the preview pane
+        for as long as that decision takes. One navigation removes both.
+
+        Best effort throughout: a machine that is offline, or behind a proxy
+        that blocks the start page, must still end up with a working browser.
+        """
+        url = self.settings.browser_start_url.strip()
+        page = self._page
+        if not url or page is None or not page.url.startswith("about:"):
+            return
+        try:
+            await page.goto(
+                url,
+                wait_until="domcontentloaded",
+                # Deliberately tighter than the action timeout: this is pure
+                # launch latency the user is waiting through, and giving up
+                # early costs nothing but a blank first page.
+                timeout=min(self.settings.browser_action_timeout_ms, 10_000),
+            )
+        except PlaywrightError as exc:
+            logger.info(
+                "Start page %s did not load (%s); beginning on about:blank",
+                url,
+                exc,
+            )
 
     def _on_new_page(self, page: Page) -> None:
         """Follow ``target=_blank`` navigations: the newest tab becomes active.

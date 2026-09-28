@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from playwright.async_api import Error as PlaywrightError
 
+from app.browser.challenge import detect_challenge
 from app.browser.session import BrowserSession
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,11 @@ async def navigate(session: BrowserSession, url: str) -> ActionResult:
             f"Loaded {session.page.url} but the server returned HTTP {status}.",
             status=status,
         )
+
+    wall = await _blocked(session)
+    if wall is not None:
+        return wall
+
     return ActionResult.success(f"Navigated to {session.page.url}", status=status)
 
 
@@ -107,7 +113,36 @@ async def reload(session: BrowserSession) -> ActionResult:
         await session.page.reload(wait_until="domcontentloaded")
     except PlaywrightError as exc:
         return ActionResult.failure(f"Could not reload: {_clean(exc)}")
+
+    # Reloading is the obvious response to a page that "did not work", so this
+    # is precisely where a challenge gets hit over and over.
+    wall = await _blocked(session)
+    if wall is not None:
+        return wall
+
     return ActionResult.success(f"Reloaded {session.page.url}")
+
+
+async def _blocked(session: BrowserSession) -> ActionResult | None:
+    """Report an anti-bot wall as a failure, or None if the page is real.
+
+    A challenge page arrives as a normal ``200``, so without this the agent is
+    told it navigated successfully and carries on reasoning about a captcha as
+    though it were the site it asked for. Worse, every such "success" resets
+    `consecutive_failures` and leaves `total_failures` untouched, so the
+    failure budget -- the thing meant to stop exactly this loop -- can never
+    trip. Counting it as a failure is what lets the agent give up, or reflect,
+    instead of grinding to the step ceiling.
+    """
+    wall = await detect_challenge(session.page)
+    if wall is None:
+        return None
+    return ActionResult.failure(
+        f"{session.page.url} answered with {wall} rather than the page itself. "
+        "The site is refusing this browser. Reloading or retrying the same URL "
+        "will not get past it -- try a different site, or ask the user for help.",
+        blocked=True,
+    )
 
 
 # ------------------------------------------------------------- interaction --

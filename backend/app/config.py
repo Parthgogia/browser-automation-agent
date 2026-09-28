@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     browser_profile_dir: Path = REPO_ROOT / "data" / "profiles"
     browser_default_profile: str = "default"
     browser_action_timeout_ms: int = 15_000
+    #: Where a freshly launched browser lands, before the agent's first look.
+    #: `about:blank` has no elements at all, which makes the first observation
+    #: useless to the model and trips the vision fallback into spending a
+    #: screenshot to show it nothing. Set to "about:blank" for the old
+    #: behaviour; failure to load is never fatal.
+    browser_start_url: str = "https://duckduckgo.com/"
 
     # -------------------------------------------------------------- agent ---
     agent_max_steps: int = 40
