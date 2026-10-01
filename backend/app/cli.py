@@ -38,6 +38,7 @@ _INTERESTING = {
     EventType.TOOL_RESULT,
     EventType.APPROVAL_REQUIRED,
     EventType.ERROR,
+    EventType.LLM_REQUEST,
     EventType.TASK_COMPLETED,
     EventType.TASK_FAILED,
 }
@@ -50,6 +51,7 @@ _PREFIX = {
     EventType.TOOL_RESULT: "  <-",
     EventType.APPROVAL_REQUIRED: "PAUSE",
     EventType.ERROR: "ERROR",
+    EventType.LLM_REQUEST: "LLM  ",
     EventType.TASK_COMPLETED: "DONE ",
     EventType.TASK_FAILED: "FAIL ",
 }
@@ -104,18 +106,19 @@ async def run_task(goal: str, profile: str | None, *, quiet: bool) -> int:
 
     try:
         payload: object = initial_state(task_id, goal, profile)
-        while True:
-            final = await graph.ainvoke(payload, config=config)  # type: ignore[arg-type]
+        with runtime.track_llm_requests(task_id):
+            while True:
+                final = await graph.ainvoke(payload, config=config)  # type: ignore[arg-type]
 
-            interrupts = final.get("__interrupt__")
-            if not interrupts:
-                break
+                interrupts = final.get("__interrupt__")
+                if not interrupts:
+                    break
 
-            # The graph paused on an approval gate. Ask, then resume.
-            from langgraph.types import Command
+                # The graph paused on an approval gate. Ask, then resume.
+                from langgraph.types import Command
 
-            approved = _ask_at_terminal(interrupts)
-            payload = Command(resume={"approved": approved})
+                approved = _ask_at_terminal(interrupts)
+                payload = Command(resume={"approved": approved})
 
         print("\n" + "=" * 72)
         print(final.get("result") or "The agent produced no result.")

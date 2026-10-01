@@ -23,7 +23,8 @@ export type EventType =
   | "approval_required"
   | "approval_resolved"
   | "error"
-  | "log";
+  | "log"
+  | "llm_request";
 
 export interface AgentEvent {
   id: string;

@@ -50,6 +50,7 @@ class EventType(StrEnum):
     # Diagnostics
     ERROR = "error"
     LOG = "log"
+    LLM_REQUEST = "llm_request"
 
 
 class AgentEvent(BaseModel):

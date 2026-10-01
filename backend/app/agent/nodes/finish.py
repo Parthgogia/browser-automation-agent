@@ -43,6 +43,16 @@ def make_finish_node(runtime: AgentRuntime) -> NodeFn:
 
         result = state.get("result") or state.get("error") or _budget_message(state, runtime)
         success = state.get("success")
+        if status is TaskStatus.COMPLETED and success:
+            # Include any embedding API requests made while storing the result.
+            await _learn(runtime, state)
+
+        request_total, provider_counts, usage_report = runtime.finish_llm_usage(task_id)
+        result = f"{result}\n\n{usage_report}"
+        usage_data = {
+            "llm_api_requests": request_total,
+            "llm_providers": provider_counts,
+        }
 
         if status is TaskStatus.AWAITING_INPUT:
             runtime.emit(
@@ -52,10 +62,17 @@ def make_finish_node(runtime: AgentRuntime) -> NodeFn:
                 step=step,
                 awaiting_input=True,
                 question=state.get("question"),
+                **usage_data,
             )
         elif status is TaskStatus.COMPLETED and success:
-            runtime.emit(task_id, EventType.TASK_COMPLETED, result, step=step, success=True)
-            await _learn(runtime, state)
+            runtime.emit(
+                task_id,
+                EventType.TASK_COMPLETED,
+                result,
+                step=step,
+                success=True,
+                **usage_data,
+            )
         else:
             runtime.emit(
                 task_id,
@@ -64,6 +81,7 @@ def make_finish_node(runtime: AgentRuntime) -> NodeFn:
                 step=step,
                 success=False,
                 error=state.get("error"),
+                **usage_data,
             )
 
         await runtime.repository.update_task(

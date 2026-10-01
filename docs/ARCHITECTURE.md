@@ -74,7 +74,7 @@ flowchart TB
 
     subgraph external["Outside the process"]
         CHROME["Chromium<br/>persistent profile"]
-        LLM["Gemini / mock"]
+        LLM["Adaptive Ollama / Gemini / NVIDIA / Groq / OpenRouter / mock"]
         PG[("Postgres + pgvector")]
     end
 
@@ -118,7 +118,7 @@ sequenceDiagram
 
     U->>API: POST /api/tasks {goal}
     API-->>U: 201 {task_id}
-    Note over API,U: returns immediately;<br/>the run proceeds in the background
+    Note over API,U: returns immediately,<br/>the run proceeds in the background
 
     API->>G: start(task_id)
     G->>M: plan(goal, memories)
@@ -133,7 +133,7 @@ sequenceDiagram
         M-->>G: click(index=12)
         G->>G: safety.evaluate() → LOW
         G->>B: click(12)
-        B-->>G: "Clicked [12] Add to cart; page navigated to /cart"
+        B-->>G: "Clicked [12] Add to cart, page navigated to /cart"
         G-->>U: tool_call + tool_result
     end
 
@@ -176,7 +176,7 @@ backend/app/
 │   └── registry.py       task_id → live session
 │
 ├── tools/              The model's vocabulary (21 tools)
-├── llm/                Provider-agnostic interface + Gemini + mock
+├── llm/                Provider-agnostic interface + Gemini + OpenAI-compatible providers + mock
 ├── safety/policy.py    What needs approval, what is forbidden
 ├── memory/store.py     Long-term facts, over pgvector
 ├── db/                 Task history and audit trail
@@ -466,12 +466,12 @@ sequenceDiagram
 
     G->>G: interrupt(payload) → checkpoint, unwind
     G-->>R: returns {__interrupt__: [...]}
-    R->>R: mark awaiting; do NOT release the browser
+    R->>R: mark awaiting, do NOT release the browser
     Note over R: minutes may pass
     U->>API: POST /approval {approved: true}
     API->>R: resume(task_id, true)
     R->>G: ainvoke(Command(resume={"approved": true}))
-    G->>G: interrupt() returns the value; execution continues
+    G->>G: interrupt() returns the value, execution continues
 ```
 
 The subtlety the runner has to get right is that a *finished* run and a *paused*
@@ -706,6 +706,28 @@ Free-tier rate limits are aggressive and a browser agent makes a call per step,
 so 429s and 5xx are retried with exponential backoff. Everything else fails
 fast — retrying a malformed request four times just wastes four seconds.
 
+### Adaptive provider routing
+
+Set `LLM_PROVIDER=adaptive` to use task-sensitive routing. Routine browser
+steps try local Ollama first, reserving hosted requests for work local models
+cannot handle. Complex research or multi-constraint tasks try Gemini first,
+then NVIDIA GLM-5.3-Flash, Muse Glimmer, Nemotron, Groq, and OpenRouter, with
+Ollama as the final fallback. Recovery starts with the NVIDIA models, then
+Groq, OpenRouter, Gemini, and Ollama. The tested NVIDIA profiles enable tool
+calling for all three models; only Muse is enabled for vision because the
+GLM image check failed and Nemotron is text-only. Kimi-K3 is excluded because
+both of the user's API checks timed out. Providers are temporarily skipped
+after quota, network, or server errors, and the current request immediately
+tries the next eligible provider. Gemini keys rotate per request; Gemini
+quotas are project-level, so keys from one project share quota. The router
+checks tool calling, forced-tool support, vision, and estimated context size
+before choosing a model. OpenRouter free routing picks a zero-priced model
+matching those requirements; Ollama and OpenRouter capabilities are discovered
+once and cached, with maintained model profiles as fallback. Tool calls are
+checked against the advertised name and argument schema before execution.
+Invalid output falls through immediately without cooling down that provider.
+Ollama supplies local embeddings through `nomic-embed-text`.
+
 ### The mock provider is not a stub
 
 `LLM_PROVIDER=mock` runs a deterministic agent that searches the web for the
@@ -866,6 +888,11 @@ database.
 Screenshots are written to disk and referenced by URL, never base64-encoded into
 events. The browser caches them, and the event stream stays small enough for the
 timeline to stay responsive.
+
+Each model-completion or embedding HTTP attempt emits an `llm_request` event
+with its provider and running request number. The terminal result includes the
+total and per-provider breakdown; retries and fallback attempts count as
+separate requests. Model-catalog and capability-discovery probes are excluded.
 
 ---
 

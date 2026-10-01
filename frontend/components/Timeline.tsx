@@ -28,6 +28,7 @@ const STYLES: Partial<Record<EventType, { label: string; className: string }>> =
   task_completed: { label: "Done", className: "text-[var(--color-ok)]" },
   task_failed: { label: "Failed", className: "text-[var(--color-danger)]" },
   task_cancelled: { label: "Cancelled", className: "text-[var(--color-danger)]" },
+  llm_request: { label: "LLM API", className: "text-[var(--color-accent)]" },
   error: { label: "Error", className: "text-[var(--color-danger)]" },
 };
 

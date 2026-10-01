@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from collections import Counter
+from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.browser.observation import Observation
@@ -24,6 +26,7 @@ from app.config import Settings
 from app.db.repository import TaskRepository
 from app.events import AgentEvent, EventBus, EventType
 from app.llm.base import LLMProvider
+from app.llm.telemetry import capture_provider_requests
 from app.memory.store import MemoryStore
 from app.safety.policy import SafetyPolicy
 from app.tools.base import ToolContext
@@ -52,6 +55,9 @@ class AgentRuntime:
     events: EventBus
     repository: TaskRepository
     memory: MemoryStore | None = None
+    _llm_request_counts: dict[str, Counter[str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     # ------------------------------------------------------------- events --
 
@@ -84,6 +90,36 @@ class AgentRuntime:
         except RuntimeError:
             # No running loop (a synchronous test); persistence is optional.
             pass
+
+    def track_llm_requests(self, task_id: str) -> AbstractContextManager[None]:
+        """Count and emit each actual inference/embedding HTTP attempt for a task."""
+        return capture_provider_requests(
+            lambda provider: self._record_llm_request(task_id, provider)
+        )
+
+    def _record_llm_request(self, task_id: str, provider: str) -> None:
+        counts = self._llm_request_counts.setdefault(task_id, Counter())
+        counts[provider] += 1
+        total = sum(counts.values())
+        self.emit(
+            task_id,
+            EventType.LLM_REQUEST,
+            f"LLM API request {total}: {provider}",
+            provider=provider,
+            provider_request=counts[provider],
+            total_requests=total,
+        )
+
+    def finish_llm_usage(self, task_id: str) -> tuple[int, dict[str, int], str]:
+        """Return a human-readable usage report and discard task counters."""
+        counts = self._llm_request_counts.pop(task_id, Counter())
+        providers = dict(counts)
+        total = sum(providers.values())
+        if not total:
+            return 0, {}, "LLM API requests: 0 (no external model requests)."
+        lines = [f"LLM API requests: {total}"]
+        lines.extend(f"- {provider}: {count}" for provider, count in providers.items())
+        return total, providers, "\n".join(lines)
 
     #: Strong references to fire-and-forget persistence tasks.
     _background: set[Any] = None  # type: ignore[assignment]

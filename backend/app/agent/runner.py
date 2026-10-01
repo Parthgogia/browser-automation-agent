@@ -82,8 +82,18 @@ class AgentRunner:
             pass
 
         self._awaiting.discard(task_id)
-        self._runtime.emit(task_id, EventType.TASK_CANCELLED, "Cancelled by the user")
-        await self._runtime.repository.update_task(task_id, status=TaskStatus.CANCELLED)
+        total, providers, usage_report = self._runtime.finish_llm_usage(task_id)
+        result = f"Cancelled by the user\n\n{usage_report}"
+        self._runtime.emit(
+            task_id,
+            EventType.TASK_CANCELLED,
+            result,
+            llm_api_requests=total,
+            llm_providers=providers,
+        )
+        await self._runtime.repository.update_task(
+            task_id, status=TaskStatus.CANCELLED, result_summary=result
+        )
         await self._release(task_id)
         return True
 
@@ -111,14 +121,27 @@ class AgentRunner:
         }
 
         try:
-            final = await self._graph.ainvoke(payload, config=config)  # type: ignore[arg-type]
+            with self._runtime.track_llm_requests(task_id):
+                final = await self._graph.ainvoke(payload, config=config)  # type: ignore[arg-type]
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a crash must still be reported
             logger.exception("Task %s crashed", task_id)
-            self._runtime.emit(task_id, EventType.TASK_FAILED, f"The run crashed: {exc}")
+            total, providers, usage_report = self._runtime.finish_llm_usage(task_id)
+            result = f"The run crashed: {exc}\n\n{usage_report}"
+            self._runtime.emit(
+                task_id,
+                EventType.TASK_FAILED,
+                result,
+                success=False,
+                llm_api_requests=total,
+                llm_providers=providers,
+            )
             await self._runtime.repository.update_task(
-                task_id, status=TaskStatus.FAILED, error=str(exc)
+                task_id,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                result_summary=result,
             )
             await self._release(task_id)
             return
