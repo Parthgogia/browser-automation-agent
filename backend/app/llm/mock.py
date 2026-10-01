@@ -12,7 +12,7 @@ smoke test.
 
 The tradeoff is honest and worth stating: it cannot *reason*. Give it a task
 that needs judgement and it will do the scripted thing anyway. Switch
-`LLM_PROVIDER` to `gemini` for real work.
+`LLM_PROVIDER` to `adaptive` for routed local and hosted reasoning.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ class MockProvider(LLMProvider):
 
 def _next_action(goal: str, messages: list[Message], tool_names: set[str]) -> dict:
     """Pick the next tool call from what has already been done."""
-    performed = [call.name for message in messages for call in message.tool_calls]
+    performed = _performed_actions(messages)
     observation = _latest_observation(messages)
 
     # 1. Nothing has happened yet: go to a search engine.
@@ -117,6 +117,16 @@ def _next_action(goal: str, messages: list[Message], tool_names: set[str]) -> di
     return _call("Reporting the result.", "finish", {"summary": summary, "success": True})
 
 
+def _performed_actions(messages: list[Message]) -> list[str]:
+    """Read prior actions from either a transcript or compact decision context."""
+    actions = [call.name for message in messages for call in message.tool_calls]
+    for message in messages:
+        actions.extend(
+            re.findall(r"^Action: ([a-z_]+)(?:\(|$)", message.content, re.MULTILINE)
+        )
+    return actions
+
+
 def _call(thought: str, name: str, arguments: dict) -> dict:
     return {"text": thought, "tool_calls": [ToolCall(name=name, arguments=arguments)]}
 
@@ -137,6 +147,8 @@ def _latest_observation(messages: list[Message]) -> str:
     for message in reversed(messages):
         if message.role == "user" and "Page content" in message.content:
             return message.content
+        if message.role == "user" and "Current page:\n" in message.content:
+            return message.content.partition("Current page:\n")[2].partition("\n\n")[0]
     return ""
 
 

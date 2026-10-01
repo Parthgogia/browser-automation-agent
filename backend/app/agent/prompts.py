@@ -20,6 +20,11 @@ from __future__ import annotations
 
 from app.browser.observation import Observation
 
+#: The raw DOM index can be very large on commerce and news pages. The
+#: decision prompt includes the current observation verbatim, so cap it here
+#: before it enters the durable transcript as well.
+_DECISION_OBSERVATION_CHARS = 8_000
+
 SYSTEM_PROMPT = """\
 You are a browser agent. You operate a real Chromium browser on the user's own \
 computer, in their own logged-in profile, to complete a task they described in \
@@ -178,7 +183,7 @@ def render_observation_message(observation: Observation, step: int, max_steps: i
             f" Only {remaining} step(s) remain. Finish now and report what you have,"
             " even if it is incomplete."
         )
-    return f"{header}\n\n{observation.render()}"
+    return f"{header}\n\n{observation.render(max_chars=_DECISION_OBSERVATION_CHARS)}"
 
 
 def render_reflection_message(assessment: str, advice: str) -> str:

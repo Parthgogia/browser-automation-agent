@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     #: useless to the model and trips the vision fallback into spending a
     #: screenshot to show it nothing. Set to "about:blank" for the old
     #: behaviour; failure to load is never fatal.
-    browser_start_url: str = "https://duckduckgo.com/"
+    browser_start_url: str = "https://search.brave.com/"
 
     # -------------------------------------------------------------- agent ---
     agent_max_steps: int = 40
