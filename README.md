@@ -79,6 +79,15 @@ LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-key-here
 ```
 
+For adaptive no-cost routing, set `LLM_PROVIDER=adaptive`, add any Gemini,
+Groq, OpenRouter, and NVIDIA API keys you have to `.env`, and keep Ollama
+running locally. Routine browser tasks try Ollama first; complex tasks
+prioritize Gemini. NVIDIA Muse Glimmer, GLM-5.3-Flash, and Nemotron are added
+as capability-filtered fallbacks. A rate-limit, network, or server failure
+immediately moves the current request to the next eligible provider. Gemini
+accepts up to three keys and rotates them per request. Provider settings are in
+`.env.example`.
+
 ### 3. Database (optional but recommended)
 
 ```bash
@@ -209,8 +218,11 @@ Everything lives in `.env`. The knobs that matter most:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `LLM_PROVIDER` | `mock` | `gemini` for real reasoning, `mock` for keyless testing |
-| `GEMINI_API_KEY` | — | From [AI Studio](https://aistudio.google.com/apikey) |
+| `LLM_PROVIDER` | `mock` | `adaptive` for Ollama/Gemini/NVIDIA/Groq/OpenRouter routing; `gemini`, `groq`, `openrouter`, `ollama`, or `mock` for one provider |
+| `GEMINI_API_KEY` / `_2` / `_3` | — | From [AI Studio](https://aistudio.google.com/apikey); secondary keys rotate per request |
+| `GROQ_API_KEY` | — | Groq API key for hosted routing |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key; defaults to its free-model router |
+| `NVIDIA_API_KEY` | — | NVIDIA Build API key; enables the tested Muse, GLM, and Nemotron models in adaptive routing |
 | `BROWSER_HEADLESS` | `false` | `false` lets you watch it work |
 | `BROWSER_DEFAULT_PROFILE` | `default` | Which saved profile to use |
 | `VISION_MODE` | `auto` | `auto` sends screenshots only when text perception is failing |
@@ -275,8 +287,8 @@ Nothing needs an API key or network access to a model.
 
 ## Troubleshooting
 
-**"mock LLM" in the status bar** — set `LLM_PROVIDER=gemini` and
-`GEMINI_API_KEY` in `.env`, then restart the backend.
+**"mock LLM" in the status bar** — set `LLM_PROVIDER=adaptive` and configure
+provider keys in `.env`, or choose a single provider, then restart the backend.
 
 **"no database"** — run `docker compose up -d`. Everything works without it; you
 lose history across restarts and long-term memory.

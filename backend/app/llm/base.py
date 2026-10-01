@@ -25,6 +25,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.llm.capabilities import CapabilityMatch, ModelCapabilities, RequestRequirements
+
 Role = Literal["system", "user", "assistant", "tool"]
 
 
@@ -101,12 +103,31 @@ class LLMResponse:
 class LLMError(RuntimeError):
     """Raised when a provider fails in a way the agent cannot work around."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        retry_after: float | None = None,
+        fallback: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.retry_after = retry_after
+        self.fallback = fallback
+
 
 class LLMProvider(ABC):
     """The contract every model backend implements."""
 
     #: Human-readable name, used in logs and events.
     name: str = "llm"
+
+    async def resolve_capabilities(
+        self, requirements: RequestRequirements, *, fast: bool = False
+    ) -> CapabilityMatch:
+        """Return known capabilities for the model selected for this request."""
+        return CapabilityMatch(capabilities=ModelCapabilities())
 
     @abstractmethod
     async def complete(

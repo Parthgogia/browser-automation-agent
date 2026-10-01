@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from itertools import cycle
 from typing import Any
 
 from app.config import Settings
@@ -25,6 +26,8 @@ from app.llm.base import (
     ToolCall,
     ToolSpec,
 )
+from app.llm.capabilities import CapabilityMatch, RequestRequirements, maintained_profile
+from app.llm.telemetry import record_provider_request
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +69,22 @@ class GeminiProvider(LLMProvider):
     """LLM backend backed by the Gemini API."""
 
     name = "gemini"
+    supports_vision = True
 
     def __init__(self, settings: Settings) -> None:
-        if not settings.gemini_api_key:
+        api_keys = [
+            key.strip()
+            for key in (
+                settings.gemini_api_key,
+                settings.gemini_api_key_2,
+                settings.gemini_api_key_3,
+            )
+            if key.strip()
+        ]
+        if not api_keys:
             raise LLMError(
-                "GEMINI_API_KEY is not set. Either add a key to .env, or set "
+                "No Gemini API key is set. Add GEMINI_API_KEY (and optionally "
+                "GEMINI_API_KEY_2 and GEMINI_API_KEY_3) to .env, or set "
                 "LLM_PROVIDER=mock to run without one."
             )
         # Imported lazily so that the mock provider works in an environment
@@ -78,8 +92,19 @@ class GeminiProvider(LLMProvider):
         from google import genai
 
         self._settings = settings
-        self._client = genai.Client(api_key=settings.gemini_api_key)
+        self._clients = [genai.Client(api_key=key) for key in api_keys]
+        self._client_cycle = cycle(self._clients)
         self._default_model = settings.llm_model
+
+    def _next_client(self):
+        """Round-robin all configured API keys between requests and retries."""
+        return next(self._client_cycle)
+
+    async def resolve_capabilities(
+        self, requirements: RequestRequirements, *, fast: bool = False
+    ) -> CapabilityMatch:
+        model = self._settings.llm_fast_model if fast else self._default_model
+        return CapabilityMatch(maintained_profile(self.name, model), model)
 
     # ------------------------------------------------------------ requests --
 
@@ -147,7 +172,8 @@ class GeminiProvider(LLMProvider):
         last_error: Exception | None = None
         for attempt in range(_MAX_ATTEMPTS):
             try:
-                return await self._client.aio.models.generate_content(**kwargs)
+                record_provider_request(self.name)
+                return await self._next_client().aio.models.generate_content(**kwargs)
             except Exception as exc:  # SDK raises a family of error types
                 last_error = exc
                 message = str(exc).lower()
@@ -158,7 +184,10 @@ class GeminiProvider(LLMProvider):
                 delay = 2**attempt
                 logger.warning("Gemini request failed (%s); retrying in %ss", exc, delay)
                 await asyncio.sleep(delay)
-        raise LLMError(f"Gemini request failed after {_MAX_ATTEMPTS} attempts: {last_error}")
+        raise LLMError(
+            f"Gemini request failed after {_MAX_ATTEMPTS} attempts: {last_error}",
+            retryable=True,
+        )
 
     # ---------------------------------------------------------- embeddings --
 
@@ -168,7 +197,8 @@ class GeminiProvider(LLMProvider):
         if not texts:
             return []
         try:
-            response = await self._client.aio.models.embed_content(
+            record_provider_request(self.name)
+            response = await self._next_client().aio.models.embed_content(
                 model=self._settings.embedding_model,
                 contents=texts,
                 config=types.EmbedContentConfig(

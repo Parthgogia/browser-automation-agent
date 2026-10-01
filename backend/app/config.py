@@ -41,8 +41,12 @@ class Settings(BaseSettings):
     )
 
     # ---------------------------------------------------------------- LLM ---
-    llm_provider: Literal["gemini", "mock"] = "mock"
+    llm_provider: Literal[
+        "gemini", "mock", "free", "adaptive", "groq", "openrouter", "ollama"
+    ] = "mock"
     gemini_api_key: str = ""
+    gemini_api_key_2: str = ""
+    gemini_api_key_3: str = ""
     #: Floating aliases rather than pinned versions. Google retires specific
     #: model IDs ("no longer available to new users") without warning, which
     #: breaks a setup that worked last month; the aliases keep tracking the
@@ -52,6 +56,28 @@ class Settings(BaseSettings):
     llm_fast_model: str = "gemini-flash-lite-latest"
     llm_temperature: float = 0.2
     embedding_model: str = "gemini-embedding-001"
+
+    # `adaptive` (and legacy `free`) selects local or hosted providers based on
+    # task complexity. Hosted providers without keys are skipped.
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_fast_model: str = "openai/gpt-oss-20b"
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # OpenRouter's free router chooses a free model that fits tool/image input.
+    openrouter_model: str = "openrouter/free"
+    openrouter_fast_model: str = "openrouter/free"
+    nvidia_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_muse_model: str = "meta/muse-glimmer-30b"
+    nvidia_glm_model: str = "z-ai/glm-5.3-flash"
+    nvidia_nemotron_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3.5:9b"
+    ollama_fast_model: str = "qwen3.5:4b"
+    ollama_embedding_model: str = "nomic-embed-text:latest"
+    llm_fallback_cooldown_s: int = 60
 
     # ----------------------------------------------------------- database ---
     database_url: str = "postgresql+asyncpg://agent:agent@localhost:5433/browser_agent"
